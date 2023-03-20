@@ -337,6 +337,16 @@ class SDWorker
     console.log "Config Replying: [#{o.length}]"
     req.reply o
 
+  queryQueue: (req) ->
+    if @queue.length == 0
+      o = "The queue is empty."
+    else if @queue.length == 1
+      o = "The queue has 1 entry."
+    else
+      o = "The queue has #{@queue.length} entries."
+    console.log o
+    req.reply o
+
   request: (req) ->
     matches = req.raw.match(/^(\S+)\s*(.*)/)
     if not matches?
@@ -351,6 +361,9 @@ class SDWorker
       return
     if req.modelName == "config"
       @queryConfig(req)
+      return
+    if req.modelName == "queue"
+      @queryQueue(req)
       return
 
     if not @models[req.modelName]?
