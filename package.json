@@ -1,0 +1,18 @@
+{
+  "name": "esdee",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx coffee src/main.coffee"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "coffeescript": "^2.7.0",
+    "cson": "^7.20.0",
+    "discord.js": "^14.8.0",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  }
+}
