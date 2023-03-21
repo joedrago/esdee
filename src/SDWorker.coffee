@@ -194,22 +194,26 @@ class SDWorker
       }))
       req.end()
 
-  img2img: (imageType, imageBuffer, prompt) ->
+  decodeImage: (image) ->
+    if image.type == 'image/png'
+      png = PNG.sync.read(image.buffer)
+      image.width = png.width
+      image.height = png.height
+    else
+      # jpeg
+      rawjpeg = JPEG.decode(image.buffer)
+      image.width = rawjpeg.width
+      image.height = rawjpeg.height
+    return image
+
+  img2img: (srcImage, srcMask, prompt) ->
     return new Promise (resolve, reject) =>
       params = @parseParams(prompt)
 
-      if imageType == 'image/png'
-        png = PNG.sync.read(imageBuffer)
-        imageWidth = png.width
-        imageHeight = png.height
-      else
-        # jpeg
-        rawjpeg = JPEG.decode(imageBuffer)
-        imageWidth = rawjpeg.width
-        imageHeight = rawjpeg.height
+      @decodeImage(srcImage)
 
-      imageAspect = imageWidth / imageHeight
-      console.log "Decoded image [#{imageType}] #{imageWidth}x#{imageHeight} (#{imageAspect})"
+      imageAspect = srcImage.width / srcImage.height
+      console.log "Decoded image [#{srcImage.type}] #{srcImage.width}x#{srcImage.height} (Aspect: #{imageAspect.toFixed(2)})"
       if imageAspect < 1
         params.height = Math.floor(params.height / 4) * 4
         params.width = Math.floor(params.height * imageAspect / 4) * 4
@@ -217,12 +221,22 @@ class SDWorker
         params.width = Math.floor(params.width / 4) * 4
         params.height = Math.floor(params.width / imageAspect / 4) * 4
 
-
       params.include_init_images = true
       console.log "Params: ", params
       params.init_images = [
-        "data:image/png;base64," + imageBuffer.toString('base64')
+        "data:#{srcImage.type};base64," + srcImage.buffer.toString('base64')
       ]
+
+      maskStatus = null
+      if srcMask?
+        @decodeImage(srcMask)
+
+        if (srcImage.width == srcMask.width) and (srcImage.height == srcMask.height)
+          maskStatus = "inpainting_fill"
+          params.inpainting_fill = 1
+          params.mask = "data:#{srcMask.type};base64," + srcMask.buffer.toString('base64')
+        else
+          maskStatus = "inpainting_ignored_bad_mask_dims"
 
       req = http.request {
         host: "127.0.0.1",
@@ -241,6 +255,8 @@ class SDWorker
             data = JSON.parse(str)
             delete params["init_images"]
             delete params["include_init_images"]
+            if maskStatus?
+              params.mask = maskStatus
             data.esdeeParams = params
           catch
             console.log "Bad JSON: #{str}"
@@ -406,15 +422,28 @@ class SDWorker
       prompt += ", #{modelInfo.suffix}"
 
     imageType = 'image/png'
-    imageBuffer = null
+
+    srcImage = null
+    srcMask = null
     if req.images? and req.images.length > 0
-      url = new URL(req.images[0])
-      pieces = path.parse(url.pathname)
-      if (pieces.ext == '.jpg') or (pieces.ext == '.jpeg')
-        imageType = 'image/jpeg'
-      console.log "imageType: #{imageType}"
-      imageBuffer = await @downloadUrl(req.images[0])
-      console.log "imageBuffer[#{imageBuffer.length}][#{imageType}]: #{req.images[0]}"
+      for imageURL in req.images
+        url = new URL(imageURL)
+        pieces = path.parse(url.pathname)
+        outImage =
+          type: 'image/png'
+        if (pieces.ext == '.jpg') or (pieces.ext == '.jpeg')
+          outImage.type = 'image/jpeg'
+        if not srcImage?
+          outImageDescription = "srcImage"
+          srcImage = outImage
+        else if not srcMask?
+          outImageDescription = "srcMask"
+          srcMask = outImage
+        else
+          # We don't need any more images
+          break
+        outImage.buffer = await @downloadUrl(imageURL)
+        console.log "#{outImageDescription}[#{outImage.buffer.length}][#{outImage.type}]: #{imageURL}"
 
     console.log "Configuring model: #{model}"
     await @setModel(model)
@@ -422,9 +451,9 @@ class SDWorker
     # req.reply "Started [#{model}]"
 
     startTime = +new Date()
-    if imageBuffer?
-      console.log "img2img[#{imageBuffer.length}]: #{prompt}"
-      result = await @img2img(imageType, imageBuffer, prompt)
+    if srcImage?
+      console.log "img2img[#{srcImage.buffer.length}]: #{prompt}"
+      result = await @img2img(srcImage, srcMask, prompt)
     else
       console.log "txt2img: #{prompt}"
       result = await @txt2img(prompt)
