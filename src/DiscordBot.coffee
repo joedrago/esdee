@@ -41,7 +41,9 @@ class DiscordBot
     if msg.attachments?
       msg.attachments.each (a) ->
         if a.url? and ((a.contentType == "image/png") or (a.contentType == "image/jpg") or (a.contentType == "image/jpeg"))
-          req.image = a.url
+          if not req.images?
+            req.images = []
+          req.images.push a.url
 
     req.reply = (text, images) ->
       replyPayload =

@@ -407,14 +407,14 @@ class SDWorker
 
     imageType = 'image/png'
     imageBuffer = null
-    if req.image?
-      url = new URL(req.image)
+    if req.images? and req.images.length > 0
+      url = new URL(req.images[0])
       pieces = path.parse(url.pathname)
       if (pieces.ext == '.jpg') or (pieces.ext == '.jpeg')
         imageType = 'image/jpeg'
       console.log "imageType: #{imageType}"
-      imageBuffer = await @downloadUrl(req.image)
-      console.log "imageBuffer[#{imageBuffer.length}][#{imageType}]: #{req.image}"
+      imageBuffer = await @downloadUrl(req.images[0])
+      console.log "imageBuffer[#{imageBuffer.length}][#{imageType}]: #{req.images[0]}"
 
     console.log "Configuring model: #{model}"
     await @setModel(model)
