@@ -6,26 +6,32 @@ PNG = require('pngjs').PNG
 JPEG = require 'jpeg-js'
 
 class SDWorker
-  constructor: (@prefix, @models, overrides) ->
+  constructor: (@prefix, @models, overrides, aliases) ->
     @queue = []
     @busy = false
+    @setDefaults()
 
-    @paramAliases =
-      denoise: "denoising_strength"
-      denoising: "denoising_strength"
-      dns: "denoising_strength"
-      dn: "denoising_strength"
-      noise: "denoising_strength"
-      de: "denoising_strength"
-      cfg: "cfg_scale"
-      step: "steps"
-      w: "width"
-      h: "height"
-      sampler: "sampler_name"
-      samp: "sampler_name"
-      count: "batch_size"
-      batch: "batch_size"
+    if overrides?
+      for name, override of overrides
+        if not @paramConfig[name]? and override.default?
+          # Allow an entirely new param to come into existence, as long as a
+          # default was provided.
+          @paramConfig[name] =
+            description: name
+            default: override.default
+        if not @paramConfig[name]?
+          console.error "Skipping unknown/incomplete override: #{name}"
+          continue
+        for k,v of override
+          console.log "[Override] #{name}.#{k} = #{v}"
+          @paramConfig[name][k] = v
 
+    if aliases?
+      for k,v of aliases
+        console.log "[Alias] '#{k}' -> '#{v}'"
+        @paramAliases[k] = v
+
+  setDefaults: ->
     @paramConfig =
       width:
         description: "Output image width"
@@ -87,6 +93,22 @@ class SDWorker
           "LMS"
           "PLMS"
         ]
+
+    @paramAliases =
+      denoise: "denoising_strength"
+      denoising: "denoising_strength"
+      dns: "denoising_strength"
+      dn: "denoising_strength"
+      noise: "denoising_strength"
+      de: "denoising_strength"
+      cfg: "cfg_scale"
+      step: "steps"
+      w: "width"
+      h: "height"
+      sampler: "sampler_name"
+      samp: "sampler_name"
+      count: "batch_size"
+      batch: "batch_size"
 
   parseParams: (prompt) ->
     rawParams = ""

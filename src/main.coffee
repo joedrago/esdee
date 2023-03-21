@@ -21,7 +21,7 @@ main = ->
   if config.prefix?
     prefix = config.prefix
 
-  worker = new SDWorker(prefix, config.models)
+  worker = new SDWorker(prefix, config.models, config.overrides, config.aliases)
   bot = new DiscordBot(prefix, config.discordBotToken)
   bot.on 'ready', (tag) ->
     console.log "Logged in:", tag

@@ -1,9 +1,18 @@
-# All secrets go here
+# Secrets
 discordBotToken: "YOUR_BOT_TOKEN"
 
-# All models go here
+# Models
 models:
   "modi":
     desc: "Disney (Modern)"
     model: "moDi-v1-pruned"
     suffix: "modern disney style"
+
+# Overrides (optional)
+overrides:
+  batch_size:
+    default: 4
+
+# Extra Aliases (optional)
+aliases:
+  "c": "batch_size"
