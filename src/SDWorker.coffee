@@ -386,7 +386,7 @@ class SDWorker
     req.reply o
 
   request: (req) ->
-    matches = req.raw.match(/^(\S+)\s*(.*)/)
+    matches = req.raw.match(/^([^\s,]+),?\s*(.*)/)
     if not matches?
       @syntax(req)
       return
