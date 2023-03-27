@@ -131,24 +131,40 @@ class SDWorker
     # console.log params
 
     keyName = "denoising_strength"
-    pieces = rawParams.split(/[:,\s]+/)
+    pieces = rawParams.split(/[:\s]+/)
     # console.log pieces
     for piece in pieces
-      v = parseFloat(piece)
-      if keyName? and not isNaN(v)
-        if @paramConfig[keyName].enum?
-          v = Math.round(v)
-          if (v < 0) or (v > @paramConfig[keyName].enum.length - 1)
-            v = 0
-          v = @paramConfig[keyName].enum[v]
-        else
-          if @paramConfig[keyName].min? and v < @paramConfig[keyName].min
-            v = @paramConfig[keyName].min
-          if @paramConfig[keyName].max? and v > @paramConfig[keyName].max
-            v = @paramConfig[keyName].max
-          if not @paramConfig[keyName].float
+      vals = []
+      if piece.indexOf(',') != -1
+        vals = piece.split(/,/).map (s) -> parseFloat(s)
+        console.log "parseParams: vals:", vals
+      else
+        vals.push parseFloat(piece)
+      if keyName? and not isNaN(vals[0])
+        for v, valIndex in vals
+          # Sanitize *all* possible values
+          if @paramConfig[keyName].enum?
             v = Math.round(v)
-        params[keyName] = v
+            if (v < 0) or (v > @paramConfig[keyName].enum.length - 1)
+              v = 0
+            v = @paramConfig[keyName].enum[v]
+          else
+            if @paramConfig[keyName].min? and v < @paramConfig[keyName].min
+              v = @paramConfig[keyName].min
+            if @paramConfig[keyName].max? and v > @paramConfig[keyName].max
+              v = @paramConfig[keyName].max
+            if not @paramConfig[keyName].float
+              v = Math.round(v)
+          vals[valIndex] = v
+        params[keyName] = vals[0]
+        if vals.length > 1
+          if not params.xyz?
+            params.xyz = []
+          params.xyz.push {
+            name: keyName
+            next: 0
+            vals: vals
+          }
         keyName = null
       else
         keyName = piece.toLowerCase()
@@ -206,10 +222,8 @@ class SDWorker
       image.height = rawjpeg.height
     return image
 
-  img2img: (srcImage, srcMask, prompt) ->
+  img2img: (srcImage, srcMask, params) ->
     return new Promise (resolve, reject) =>
-      params = @parseParams(prompt)
-
       @decodeImage(srcImage)
 
       imageAspect = srcImage.width / srcImage.height
@@ -257,7 +271,6 @@ class SDWorker
             delete params["include_init_images"]
             if maskStatus?
               params.mask = maskStatus
-            data.esdeeParams = params
           catch
             console.log "Bad JSON: #{str}"
             data = []
@@ -266,9 +279,8 @@ class SDWorker
       req.write(JSON.stringify(params))
       req.end()
 
-  txt2img: (prompt) ->
+  txt2img: (params) ->
     return new Promise (resolve, reject) =>
-      params = @parseParams(prompt)
       params.width = Math.floor(params.width / 4) * 4
       params.height = Math.floor(params.height / 4) * 4
       console.log "Params: ", params
@@ -288,7 +300,6 @@ class SDWorker
           data = null
           try
             data = JSON.parse(str)
-            data.esdeeParams = params
           catch
             console.log "Bad JSON: #{str}"
             data = []
@@ -412,6 +423,22 @@ class SDWorker
     req.reply "Queued: [#{@queue.length}]"
     @kick()
 
+  xyzPlot: (xyz, params) ->
+    # set the next plot's params
+    for e in xyz
+      params[e.name] = e.vals[e.next]
+
+    # "increment" the plot
+    for e, eIndex in xyz
+      if e.next < e.vals.length - 1
+        e.next += 1
+        break
+      else
+        if eIndex == xyz.length - 1
+          return true
+        e.next = 0
+    return false
+
   diffusion: (req) ->
     modelName = req.modelName
     prompt = req.prompt
@@ -450,28 +477,69 @@ class SDWorker
 
     # req.reply "Started [#{model}]"
 
-    startTime = +new Date()
-    if srcImage?
-      console.log "img2img[#{srcImage.buffer.length}]: #{prompt}"
-      result = await @img2img(srcImage, srcMask, prompt)
+    outputImages = []
+
+    params = @parseParams(prompt)
+    xyzOutputs = []
+    xyz = params.xyz
+    if xyz?
+      delete params["xyz"]
+      params.batch_size = 1 # Force to 1
+
+      for e in xyz
+        if e.name == "batch_size"
+          req.reply("FAILED: You may not XYZ plot batch_size")
+          return
     else
-      console.log "txt2img: #{prompt}"
-      result = await @txt2img(prompt)
+      xyz = []
+    console.log "xyz: ", xyz
+
+    startTime = +new Date()
+
+    loop
+      lastIteration = @xyzPlot(xyz, params)
+      if srcImage?
+        console.log "img2img[#{srcImage.buffer.length}]: #{prompt}"
+        result = await @img2img(srcImage, srcMask, params)
+      else
+        console.log "txt2img: #{prompt}"
+        result = await @txt2img(params)
+      try
+        outputSeed = JSON.parse(result.info).seed
+      catch
+        outputSeed = -1
+      params.seed = outputSeed
+      if result? and result.images? and result.images.length > 0
+        for img in result.images
+          outputImages.push img
+          if xyz.length > 0
+            xyzOutput = {}
+            for e in xyz
+              # if @paramConfig[e.name]?.enum?
+              #   xyzOutput[e.name] = params[e.name]
+              # else
+              xyzOutput[e.name] = params[e.name]
+            xyzOutputs.push xyzOutput
+      if lastIteration or (outputImages.length >= 10)
+        break
+
     endTime = +new Date()
     timeTaken = endTime - startTime
 
-    try
-      outputSeed = JSON.parse(result.info).seed
-    catch
-      outputSeed = -1
-
-    result.esdeeParams.seed = outputSeed
+    for e in xyz
+      delete params[e.name]
 
     message = {}
-    if result? and result.images? and result.images.length > 0
-      console.log "Received #{result.images.length} images..."
-      message.text = "Complete [#{model}][#{(timeTaken/1000).toFixed(2)}s]: `#{JSON.stringify(result.esdeeParams)}`\n"
-      message.images = result.images
+    if outputImages.length > 0
+      console.log "Received #{outputImages.length} images..."
+      message.text = "Complete [#{model}][#{(timeTaken/1000).toFixed(2)}s]:"
+      if xyzOutputs.length
+        message.text += "\n**Base**: `#{JSON.stringify(params)}`\n"
+        for e, eIndex in xyzOutputs
+          message.text += "**[#{eIndex}]**: `#{JSON.stringify(e)}`\n"
+      else
+        message.text += "`#{JSON.stringify(params)}`\n"
+      message.images = outputImages
     else
       message.text = "**FAILED**: [#{model}] #{prompt}"
 
