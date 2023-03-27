@@ -396,6 +396,25 @@ class SDWorker
     console.log o
     req.reply o
 
+  xyzPlot: (xyz, params) ->
+    if xyz.length < 1
+      return true
+
+    # set the next plot's params
+    for e in xyz
+      params[e.name] = e.vals[e.next]
+
+    # "increment" the plot
+    for e, eIndex in xyz
+      if e.next < e.vals.length - 1
+        e.next += 1
+        break
+      else
+        if eIndex == xyz.length - 1
+          return true
+        e.next = 0
+    return false
+
   request: (req) ->
     matches = req.raw.match(/^([^\s,]+),?\s*(.*)/)
     if not matches?
@@ -419,28 +438,80 @@ class SDWorker
       @syntax(req, "No such model: #{req.modelName}")
       return
 
-    @queue.push req
-    req.reply "Queued: [#{@queue.length}]"
-    @kick()
+    # ----------------------------------------------------------
+    # Prepare request / passes
 
-  xyzPlot: (xyz, params) ->
-    if xyz.length < 1
-      return true
+    params = @parseParams(req.prompt)
+    passes = []
+    xyz = params.xyz
+    if xyz?
+      delete params["xyz"]
+      params.batch_size = 1 # Force to 1
 
-    # set the next plot's params
-    for e in xyz
-      params[e.name] = e.vals[e.next]
+      for e in xyz
+        if e.name == "batch_size"
+          req.reply("FAILED: You may not XYZ plot batch_size")
+          return
+    else
+      xyz = []
 
-    # "increment" the plot
-    for e, eIndex in xyz
-      if e.next < e.vals.length - 1
-        e.next += 1
+    totalImages = 0
+    loop
+      lastIteration = @xyzPlot(xyz, params)
+      totalImages += params.batch_size
+      if xyz.length > 0
+        pass = {}
+        for e in xyz
+          pass[e.name] = params[e.name]
+        passes.push pass
+      if lastIteration or (totalImages >= 10)
         break
-      else
-        if eIndex == xyz.length - 1
-          return true
-        e.next = 0
-    return false
+
+    if passes.length < 1
+      passes.push {}
+
+    req.params = params
+    req.passes = passes
+    req.xyz = xyz
+    req.totalImages = totalImages
+
+    # console.log "req.params:", req.params
+    # console.log "req.passes:", req.passes
+    # console.log "req.xyz:", req.xyz
+    # console.log "req.totalImages:", req.totalImages
+
+    modelInfo = @models[req.modelName]
+
+    queuePos = @queue.length + 1
+    if queuePos == 1
+      queuePos = "next"
+    else
+      queuePos = "##{queuePos}"
+
+    s = "_Queued:_ **#{queuePos}** in line"
+    if not req.images? or (req.images.length == 0)
+      s += ", **txt2img**"
+    else if req.images.length > 1
+      s += ", **img2img** (+inpainting)"
+    else if req.images.length > 0
+      s += ", **img2img**"
+    s += ", **#{modelInfo.model}** model"
+    if modelInfo.suffix?
+      s += ", **#{modelInfo.suffix}** auto-suffix"
+    if req.xyz.length > 0
+      s += ", **"
+      for e,eIndex in req.xyz
+        if eIndex > 0
+          s += "x"
+        s += e.vals.length
+      s += "** XYZ splits"
+    s += ", **#{totalImages}** output image#{if totalImages == 1 then "" else "s"}"
+
+    # ----------------------------------------------------------
+
+    @queue.push req
+    req.reply s
+    @kick()
 
   diffusion: (req) ->
     modelName = req.modelName
@@ -478,70 +549,46 @@ class SDWorker
     console.log "Configuring model: #{model}"
     await @setModel(model)
 
-    # req.reply "Started [#{model}]"
-
     outputImages = []
-
-    params = @parseParams(prompt)
-    xyzOutputs = []
-    xyz = params.xyz
-    if xyz?
-      delete params["xyz"]
-      params.batch_size = 1 # Force to 1
-
-      for e in xyz
-        if e.name == "batch_size"
-          req.reply("FAILED: You may not XYZ plot batch_size")
-          return
-    else
-      xyz = []
-    console.log "xyz: ", xyz
-
     startTime = +new Date()
-
-    loop
-      lastIteration = @xyzPlot(xyz, params)
+    for pass in req.passes
+      for k,v of pass
+        req.params[k] = v
       if srcImage?
         console.log "img2img[#{srcImage.buffer.length}]: #{prompt}"
-        result = await @img2img(srcImage, srcMask, params)
+        result = await @img2img(srcImage, srcMask, req.params)
       else
         console.log "txt2img: #{prompt}"
-        result = await @txt2img(params)
+        result = await @txt2img(req.params)
       try
         outputSeed = JSON.parse(result.info).seed
       catch
         outputSeed = -1
-      params.seed = outputSeed
+      req.params.seed = outputSeed
       if result? and result.images? and result.images.length > 0
         for img in result.images
           outputImages.push img
-          if xyz.length > 0
-            xyzOutput = {}
-            for e in xyz
-              # if @paramConfig[e.name]?.enum?
-              #   xyzOutput[e.name] = params[e.name]
-              # else
-              xyzOutput[e.name] = params[e.name]
-            xyzOutputs.push xyzOutput
-      if lastIteration or (outputImages.length >= 10)
+      if outputImages.length >= 10
+        # This should be impossible
+        console.log "INTERNAL ERROR: Somehow we made more than 10 images!"
         break
-
     endTime = +new Date()
     timeTaken = endTime - startTime
 
-    for e in xyz
-      delete params[e.name]
+    for pass in req.passes
+      for k,v of pass
+        delete req.params[k]
 
     message = {}
     if outputImages.length > 0
       console.log "Received #{outputImages.length} images..."
       message.text = "Complete [#{model}][#{(timeTaken/1000).toFixed(2)}s]:"
-      if xyzOutputs.length
-        message.text += "\n**Base**: `#{JSON.stringify(params)}`\n"
-        for e, eIndex in xyzOutputs
-          message.text += "**[#{eIndex}]**: `#{JSON.stringify(e)}`\n"
+      if req.passes.length > 1
+        message.text += "\n**Base**: `#{JSON.stringify(req.params)}`\n"
+        for pass, passIndex in req.passes
+          message.text += "**[#{passIndex}]**: `#{JSON.stringify(pass)}`\n"
       else
-        message.text += "`#{JSON.stringify(params)}`\n"
+        message.text += "`#{JSON.stringify(req.params)}`\n"
       message.images = outputImages
     else
       message.text = "**FAILED**: [#{model}] #{prompt}"
