@@ -424,6 +424,9 @@ class SDWorker
     @kick()
 
   xyzPlot: (xyz, params) ->
+    if xyz.length < 1
+      return true
+
     # set the next plot's params
     for e in xyz
       params[e.name] = e.vals[e.next]
