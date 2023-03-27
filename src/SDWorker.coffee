@@ -438,6 +438,10 @@ class SDWorker
       @syntax(req, "No such model: #{req.modelName}")
       return
 
+    modelInfo = @models[req.modelName]
+    if modelInfo.suffix?
+      req.prompt += ", #{modelInfo.suffix}"
+
     # ----------------------------------------------------------
     # Prepare request / passes
 
@@ -480,8 +484,6 @@ class SDWorker
     # console.log "req.xyz:", req.xyz
     # console.log "req.totalImages:", req.totalImages
 
-    modelInfo = @models[req.modelName]
-
     queuePos = @queue.length + 1
     if queuePos == 1
       queuePos = "next"
@@ -514,16 +516,9 @@ class SDWorker
     @kick()
 
   diffusion: (req) ->
-    modelName = req.modelName
-    prompt = req.prompt
-
-    modelInfo = @models[modelName]
-    model = modelInfo.model
-    if modelInfo.suffix?
-      prompt += ", #{modelInfo.suffix}"
+    modelInfo = @models[req.modelName]
 
     imageType = 'image/png'
-
     srcImage = null
     srcMask = null
     if req.images? and req.images.length > 0
@@ -546,8 +541,8 @@ class SDWorker
         outImage.buffer = await @downloadUrl(imageURL)
         console.log "#{outImageDescription}[#{outImage.buffer.length}][#{outImage.type}]: #{imageURL}"
 
-    console.log "Configuring model: #{model}"
-    await @setModel(model)
+    console.log "Configuring model: #{modelInfo.model}"
+    await @setModel(modelInfo.model)
 
     outputImages = []
     startTime = +new Date()
@@ -555,10 +550,10 @@ class SDWorker
       for k,v of pass
         req.params[k] = v
       if srcImage?
-        console.log "img2img[#{srcImage.buffer.length}]: #{prompt}"
+        console.log "img2img[#{srcImage.buffer.length}]: #{req.promptt}"
         result = await @img2img(srcImage, srcMask, req.params)
       else
-        console.log "txt2img: #{prompt}"
+        console.log "txt2img: #{req.promptt}"
         result = await @txt2img(req.params)
       try
         outputSeed = JSON.parse(result.info).seed
@@ -582,7 +577,7 @@ class SDWorker
     message = {}
     if outputImages.length > 0
       console.log "Received #{outputImages.length} images..."
-      message.text = "Complete [#{model}][#{(timeTaken/1000).toFixed(2)}s]:"
+      message.text = "Complete [#{modelInfo.model}][#{(timeTaken/1000).toFixed(2)}s]:"
       if req.passes.length > 1
         message.text += "\n**Base**: `#{JSON.stringify(req.params)}`\n"
         for pass, passIndex in req.passes
@@ -591,7 +586,7 @@ class SDWorker
         message.text += "`#{JSON.stringify(req.params)}`\n"
       message.images = outputImages
     else
-      message.text = "**FAILED**: [#{model}] #{prompt}"
+      message.text = "**FAILED**: [#{modelInfo.model}] #{req.promptt}"
 
     console.log "Replying: [#{message.text}][#{message.images?.length}]"
     req.reply(message.text, message.images)
