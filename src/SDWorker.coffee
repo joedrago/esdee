@@ -5,6 +5,9 @@ path = require 'path'
 PNG = require('pngjs').PNG
 JPEG = require 'jpeg-js'
 
+pad = (s, count) ->
+  return ("                   " + s).slice(-1 * count)
+
 class SDWorker
   constructor: (@prefix, @models, overrides, aliases) ->
     @queue = []
@@ -354,9 +357,6 @@ class SDWorker
     return true
 
   queryConfig: (req) ->
-    pad = (s, count) ->
-      return ("                   " + s).slice(-1 * count)
-
     o = "```\n"
     o += "SD Worker Config\n";
     o += "----------------\n";
@@ -515,6 +515,17 @@ class SDWorker
     req.reply s
     @kick()
 
+  dumpPretty: (obj) ->
+    s = ""
+    needComma = false
+    for k,v of obj
+      if needComma
+        s += ", "
+      else
+        needComma = true
+      s += "#{k}: #{JSON.stringify(v)}"
+    return s
+
   diffusion: (req) ->
     modelInfo = @models[req.modelName]
 
@@ -550,10 +561,10 @@ class SDWorker
       for k,v of pass
         req.params[k] = v
       if srcImage?
-        console.log "img2img[#{srcImage.buffer.length}]: #{req.promptt}"
+        console.log "img2img[#{srcImage.buffer.length}]: #{req.prompt}"
         result = await @img2img(srcImage, srcMask, req.params)
       else
-        console.log "txt2img: #{req.promptt}"
+        console.log "txt2img: #{req.prompt}"
         result = await @txt2img(req.params)
       try
         outputSeed = JSON.parse(result.info).seed
@@ -563,7 +574,7 @@ class SDWorker
       if result? and result.images? and result.images.length > 0
         for img in result.images
           outputImages.push img
-      if outputImages.length >= 10
+      if outputImages.length > 10
         # This should be impossible
         console.log "INTERNAL ERROR: Somehow we made more than 10 images!"
         break
@@ -577,16 +588,17 @@ class SDWorker
     message = {}
     if outputImages.length > 0
       console.log "Received #{outputImages.length} images..."
-      message.text = "Complete [#{modelInfo.model}][#{(timeTaken/1000).toFixed(2)}s]:"
+      message.text = "Complete [#{modelInfo.model}][#{(timeTaken/1000).toFixed(2)}s]:\n"
       if req.passes.length > 1
-        message.text += "\n**Base**: `#{JSON.stringify(req.params)}`\n"
+        message.text += "```#{@dumpPretty(req.params)}\n\n"
         for pass, passIndex in req.passes
-          message.text += "**[#{passIndex}]**: `#{JSON.stringify(pass)}`\n"
+          message.text += "Image ##{pad(passIndex+1, 2)}: #{@dumpPretty(pass)}\n"
+        message.text += "```\n"
       else
-        message.text += "`#{JSON.stringify(req.params)}`\n"
+        message.text += "```#{@dumpPretty(req.params)}```"
       message.images = outputImages
     else
-      message.text = "**FAILED**: [#{modelInfo.model}] #{req.promptt}"
+      message.text = "**FAILED**: [#{modelInfo.model}] #{req.prompt}"
 
     console.log "Replying: [#{message.text}][#{message.images?.length}]"
     req.reply(message.text, message.images)
