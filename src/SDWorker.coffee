@@ -340,6 +340,8 @@ class SDWorker
 
     output += "Available models:\n"
     for trigger, model of @models
+      if model.unlisted
+        continue
       output += " * **#{@prefix} #{trigger}** - _#{model.desc}_\n"
 
     output += "\nSyntax:\n\`\`\`\n"
