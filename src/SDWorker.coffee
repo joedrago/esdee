@@ -398,6 +398,19 @@ class SDWorker
     console.log o
     req.reply o
 
+  queryURLs: (req) ->
+    o = "URLs:\n"
+    for trigger, model of @models
+      if model.unlisted
+        continue
+      if model.url?
+        url = model.url
+      else
+        url = "N/A"
+      o += "**#{trigger}** - #{url}\n"
+    rep = await req.reply(o)
+    rep.suppressEmbeds(true)
+
   xyzPlot: (xyz, params) ->
     if xyz.length < 1
       return true
@@ -434,6 +447,9 @@ class SDWorker
       return
     if req.modelName == "queue"
       @queryQueue(req)
+      return
+    if req.modelName == "urls"
+      @queryURLs(req)
       return
 
     if not @models[req.modelName]?
