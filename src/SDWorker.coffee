@@ -133,6 +133,9 @@ class SDWorker
       params[name] = pc.default
     # console.log params
 
+    rawParams = rawParams.replace(/,\s+/g, ',')
+    console.log "rawParams: #{rawParams}"
+
     keyName = "denoising_strength"
     pieces = rawParams.split(/[:\s]+/)
     # console.log pieces
