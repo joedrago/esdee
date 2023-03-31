@@ -66,7 +66,6 @@ class SDWorker
         description: "Random seed. Leave at -1 to keep it random, or use the previous seed to recreate the last image"
         default: -1
         min: -1
-        max: 2147483647
       batch_size:
         description: "How many images to generate"
         default: 1
