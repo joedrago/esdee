@@ -144,6 +144,28 @@ class SDWorker
       if piece.indexOf(',') != -1
         vals = piece.split(/,/).map (s) -> parseFloat(s)
         console.log "parseParams: vals:", vals
+      else if (piece.indexOf('-') != -1) and (piece.indexOf('x') != -1)
+        [start, rest] = piece.split(/-/)
+        [end, count] = rest.split(/x/)
+        start = parseFloat(start)
+        end = parseFloat(end)
+        count = parseInt(count)
+        if (count < 1) or (count > 9)
+          count = 1
+        if isNaN(start) or isNaN(end)
+          vals = [1]
+        else if count == 1
+            vals = [start]
+        else if count == 2
+            vals = [start, end]
+        else
+          step = (end - start) / (count - 1)
+          console.log "start: #{start}, end: #{end}, count: #{count}, step: #{step}"
+          vals = []
+          v = start
+          for i in [0...count]
+            vals.push Math.round(v * 1000) / 1000
+            v += step
       else
         vals.push parseFloat(piece)
       if keyName? and not isNaN(vals[0])
