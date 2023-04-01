@@ -387,7 +387,7 @@ class SDWorker
     output += "#{@prefix} MODELNAME [steps 10 cfg 3] some prompt || some negative prompt\n"
     output += "\`\`\`\n"
     output += "**Attach an image** to your request to use it as an input!\n"
-    output += "\nTune params by putting pairs inside \`[]\` (see above).\n"
+    output += "\nTune params by putting pairs inside \`[]\` (see above). You may also use `random` as your model name to get a random model, or `grid` as the model name as an alias for `random [grid]`, to get a dn/cfg 5x5 grid.\n"
     output += "Get the full list of tunable parameters by asking for the config with **#{@prefix} config**\n"
     output += "\n"
 
