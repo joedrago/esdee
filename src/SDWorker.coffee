@@ -70,7 +70,7 @@ class SDWorker
         description: "How many images to generate"
         default: 1
         min: 1
-        max: 9
+        max: 25
       sampler_name:
         description: "Which sampler to use. No, I don't understand it either."
         default: "DPM++ 2M Karras"
@@ -112,6 +112,14 @@ class SDWorker
       count: "batch_size"
       batch: "batch_size"
 
+    @prettyShortAlias =
+      batch_size: "count"
+      cfg_scale: "cfg"
+      denoising_strength: "dn"
+      height: "h"
+      sampler_name: "sampler"
+      width: "w"
+
   parseParams: (prompt) ->
     rawParams = ""
     if matches = prompt.match(/^\[([^\]]+)\](.*)/)
@@ -139,6 +147,10 @@ class SDWorker
     pieces = rawParams.split(/[:\s]+/)
     # console.log pieces
     for piece in pieces
+      if piece == "grid"
+        params.grid = true
+        continue
+
       vals = []
       if piece.indexOf(',') != -1
         vals = piece.split(/,/).map (s) -> parseFloat(s)
@@ -419,6 +431,8 @@ class SDWorker
       o = "The queue has 1 entry."
     else
       o = "The queue has #{@queue.length} entries."
+    if @queuePassIndex? and @queuePassCount?
+      o += " Current batch: (#{@queuePassIndex+1}/#{@queuePassCount})"
     console.log o
     req.reply o
 
@@ -476,6 +490,16 @@ class SDWorker
       @queryURLs(req)
       return
 
+    autoGrid = false
+    if req.modelName == "grid"
+      autoGrid = true
+      req.modelName = "random"
+
+    if req.modelName == "random" or req.modelName == "rand"
+      modelNames = Object.keys(@models)
+      req.modelName = modelNames[Math.floor(Math.random() * modelNames.length)]
+      console.log "Chose random model: #{req.modelName}"
+
     if not @models[req.modelName]?
       @syntax(req, "No such model: #{req.modelName}")
       return
@@ -501,6 +525,23 @@ class SDWorker
     else
       xyz = []
 
+    if params.grid
+      autoGrid = true
+      delete params["grid"]
+
+    if (xyz.length == 0) and autoGrid
+      params.batch_size = 1 # Force to 1
+      xyz.push {
+        name: "denoising_strength"
+        next: 0
+        vals: [0.3,0.4,0.5,0.6,0.7]
+      }
+      xyz.push {
+        name: "cfg_scale"
+        next: 0
+        vals: [3,9,15,21,27]
+      }
+
     totalImages = 0
     loop
       lastIteration = @xyzPlot(xyz, params)
@@ -510,7 +551,7 @@ class SDWorker
         for e in xyz
           pass[e.name] = params[e.name]
         passes.push pass
-      if lastIteration or (totalImages >= 10)
+      if lastIteration or (totalImages >= 50) # 50 is a sanity limit
         break
 
     if passes.length < 1
@@ -549,7 +590,7 @@ class SDWorker
           s += "x"
         s += e.vals.length
       s += "** XYZ splits"
-    s += ", **#{totalImages}** output image#{if totalImages == 1 then "" else "s"}"
+    s += ", **#{totalImages}** output image#{if totalImages == 1 then "" else "s"}#{if totalImages > 10 then " (grid)" else ""}"
 
     # ----------------------------------------------------------
 
@@ -565,8 +606,36 @@ class SDWorker
         s += ", "
       else
         needComma = true
+      if @prettyShortAlias[k]?
+        k = @prettyShortAlias[k]
       s += "#{k}: #{JSON.stringify(v)}"
     return s
+
+  generateGrid: (outputImages, cols = null) ->
+    console.log "generateGrid(#{outputImages.length}, #{cols})"
+
+    {Canvas, loadImage} = require('canvas')
+    CanvasGrid = require('merge-images-grid')
+
+    if not cols?
+      cols = Math.round(Math.sqrt(outputImages.length))
+      if cols < 1
+        cols = 1
+
+    list = []
+    for img in outputImages
+      o = await loadImage(Buffer.from(img, 'base64'))
+      list.push { image: o }
+
+    merged = new CanvasGrid({
+      canvas: new Canvas(1, 1)
+      col: cols
+      padding: 2
+      gap: 2
+      bgColor: '#ffffff'
+      list: list
+    })
+    return merged.canvas.toBuffer("image/jpeg", { quality: 0.6 })
 
   diffusion: (req) ->
     modelInfo = @models[req.modelName]
@@ -599,7 +668,9 @@ class SDWorker
 
     outputImages = []
     startTime = +new Date()
-    for pass in req.passes
+    for pass, passIndex in req.passes
+      @queuePassIndex = passIndex
+      @queuePassCount = req.passes.length
       for k,v of pass
         req.params[k] = v
       if srcImage?
@@ -616,12 +687,14 @@ class SDWorker
       if result? and result.images? and result.images.length > 0
         for img in result.images
           outputImages.push img
-      if outputImages.length > 10
-        # This should be impossible
-        console.log "INTERNAL ERROR: Somehow we made more than 10 images!"
-        break
+      # if outputImages.length > 10
+      #   # This should be impossible
+      #   console.log "INTERNAL ERROR: Somehow we made more than 10 images!"
+      #   break
     endTime = +new Date()
     timeTaken = endTime - startTime
+    @queuePassIndex = null
+    @queuePassCount = null
 
     for pass in req.passes
       for k,v of pass
@@ -634,13 +707,28 @@ class SDWorker
       if req.passes.length > 1
         message.text += "```#{@dumpPretty(req.params)}\n\n"
         for pass, passIndex in req.passes
-          message.text += "Image ##{pad(passIndex+1, 2)}: #{@dumpPretty(pass)}\n"
+          message.text += "##{pad(passIndex+1, 2)}: #{@dumpPretty(pass)}\n"
         message.text += "```\n"
       else
         message.text += "```#{@dumpPretty(req.params)}```"
-      message.images = outputImages
+
+      if outputImages.length > 10
+        cols = null
+        if req.xyz? and req.xyz.length > 0 and req.xyz[0].vals.length > 0
+          cols = req.xyz[0].vals.length
+        gridBuffer = await @generateGrid(outputImages, cols)
+        if gridBuffer.length > (8 * 1024 * 1024)
+          console.log "gridBuffer too large: #{gridBuffer.length}"
+          message.images = outputImages.slice(0, 9)
+        else
+          message.images = [gridBuffer]
+      else
+        message.images = outputImages
     else
       message.text = "**FAILED**: [#{modelInfo.model}] #{req.prompt}"
+
+    if message.text.length >= 2000
+      message.text = message.text.substring(0, 1999)
 
     console.log "Replying: [#{message.text}][#{message.images?.length}]"
     req.reply(message.text, message.images)
