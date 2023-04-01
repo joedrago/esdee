@@ -157,6 +157,8 @@ class SDWorker
     rawParams = rawParams.replace(/,\s+/g, ',')
     console.log "rawParams: #{rawParams}"
 
+    explicitlySet = {}
+    origKeyName = "denoising_strength"
     keyName = "denoising_strength"
     pieces = rawParams.split(/[:\s]+/)
     # console.log pieces
@@ -210,6 +212,7 @@ class SDWorker
               v = Math.round(v)
           vals[valIndex] = v
         params[keyName] = vals[0]
+        explicitlySet[keyName] = origKeyName
         if vals.length > 1
           if not params.xyz?
             params.xyz = []
@@ -219,14 +222,20 @@ class SDWorker
             vals: vals
           }
         keyName = null
+        origKeyName = null
       else
         keyName = piece.toLowerCase()
+        origKeyName = keyName
         if @paramAliases[keyName]?
           keyName = @paramAliases[keyName]
         if not @paramConfig[keyName]?
           keyName = null
+          origKeyName = null
 
-    return params
+    return {
+      params: params
+      explicit: explicitlySet
+    }
 
   downloadUrl: (url) ->
     return new Promise (resolve, reject) ->
@@ -562,7 +571,8 @@ class SDWorker
     # ----------------------------------------------------------
     # Prepare request / passes
 
-    params = @parseParams(req.prompt, refineParams)
+    {params, explicit} = @parseParams(req.prompt, refineParams)
+    console.log "explicit:", explicit
     modelInfo = @models[req.modelName]
 
     passes = []
@@ -578,9 +588,22 @@ class SDWorker
     else
       xyz = []
 
+    hasImages = req.images? and (req.images.length > 0)
+
     if params.grid
       autoGrid = true
       delete params["grid"]
+
+      if not hasImages
+        req.reply("It doesn't make sense to `[grid]` without an attached image.")
+        return
+
+    if not hasImages and explicit.denoising_strength?
+      aliasText = ""
+      if explicit.denoising_strength != "denoising_strength"
+        aliasText = " (`#{explicit.denoising_strength}`)"
+      req.reply("Tuning denoising strength#{aliasText} doesn't make sense without an attached image.")
+      return
 
     if (xyz.length == 0) and autoGrid
       params.batch_size = 1 # Force to 1
@@ -629,7 +652,7 @@ class SDWorker
     s = "_Queued:_ **#{queuePos}** in line"
     if refineParams?
       s += ", ***refinement***"
-    if not req.images? or (req.images.length == 0)
+    if not hasImages
       s += ", **txt2img**"
     else if req.images.length > 1
       s += ", **img2img** (+inpainting)"
