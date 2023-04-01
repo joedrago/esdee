@@ -146,9 +146,9 @@ class SDWorker
         switch k
           when 'images', 'model'
             continue
-          when 'prompt'
-            if params.prompt.length == 0
-              params.prompt = v
+          when 'prompt', 'negative_prompt'
+            if not params[k]? or params[k].length == 0
+              params[k] = v
           else
             if @paramAliases[k]?
               k = @paramAliases[k]
@@ -380,37 +380,54 @@ class SDWorker
     @busy = false
     @kick()
 
-  syntax: (req, reason) ->
+  querySyntax: (req, reason) ->
     output = ""
 
     if reason?
       output += "**Error**: #{reason}\n\n"
     else
-      output += "Stable Diffusion Help:\n\n";
+      output += "Stable Diffusion!\n";
 
-    output += "Available models:\n"
-    for trigger, model of @models
-      if model.unlisted
-        continue
-      output += " * **#{@prefix} #{trigger}** - _#{model.desc}_\n"
-
-    output += "\nSyntax:\n\`\`\`\n"
+    output += "\`\`\`\n"
     output += "#{@prefix} MODELNAME some prompt\n"
-    output += "#{@prefix} MODELNAME [steps 10 cfg 3] some prompt\n"
     output += "#{@prefix} MODELNAME some prompt || some negative prompt\n"
-    output += "#{@prefix} MODELNAME [steps 10 cfg 3] some prompt || some negative prompt\n"
+    output += "#{@prefix} MODELNAME [someParam 10 otherParam 3] some prompt\n"
+    output += "#{@prefix} MODELNAME [someParam 10 otherParam 3] some prompt || some negative prompt\n"
     output += "\`\`\`\n"
     output += "**Attach an image** to your request to use it as an input!\n"
-    output += "\nTune params by putting pairs inside \`[]\` (see above). You may also use `random` as your model name to get a random model, or `grid` as the model name as an alias for `random [grid]`, to get a dn/cfg 5x5 grid.\n"
-    output += "Get the full list of tunable parameters by asking for the config with **#{@prefix} config**\n"
+    output += "\nTune params by putting name/value pairs inside \`[]\` _after_ the model name.\n"
+    output += "* Use comma separated values for a param's value to try multiple values, such as `[dn 0.3,0.4,0.5,0.6,0.7]`\n"
+    output += "* Use a range for a param's value to try multiple values, such as `[dn 0.3-0.7x5]` (same as above)\n"
+    output += "* Use `[grid]` as shorthand for `[dn 0.3-0.7x5 cfg 3-27x5]`\n"
+    output += "* **Reply to a result**(!) to use its settings as a starting point (use `refine` for the model name to keep that model)\n"
+    output += "\n"
+    output += "**#{@prefix} params** - Get the full list of tunable parameters\n"
+    output += "**#{@prefix} models** - Get the full list of models\n"
+    output += "**#{@prefix} sources** - Get the original source URLs of all models\n"
     output += "\n"
 
     req.reply output
     return true
 
-  queryConfig: (req) ->
+  queryModels: (req, reason) ->
+    output = ""
+    output += "Models:\n\n"
+    for trigger, model of @models
+      if model.unlisted
+        continue
+      output += "**#{trigger}** - _#{model.desc}_\n"
+
+    output += "\n"
+    output += "**random** - Choose a model at random!\n"
+    output += "**grid** - Shorthand for `random [grid]`\n"
+    output += "**refine** - If replying to a result, use that result's model choice`\n"
+
+    req.reply output
+    return
+
+  queryParams: (req) ->
     o = "```\n"
-    o += "SD Worker Config\n";
+    o += "SD Worker Params\n";
     o += "----------------\n";
 
     for pcName, pc of @paramConfig
@@ -435,7 +452,7 @@ class SDWorker
 
     o += "```"
 
-    console.log "Config Replying: [#{o.length}]"
+    console.log "Params Replying: [#{o.length}]"
     req.reply o
 
   queryQueue: (req) ->
@@ -450,8 +467,8 @@ class SDWorker
     console.log o
     req.reply o
 
-  queryURLs: (req) ->
-    o = "URLs:\n"
+  querySources: (req) ->
+    o = "Sources:\n"
     for trigger, model of @models
       if model.unlisted
         continue
@@ -496,23 +513,26 @@ class SDWorker
 
     matches = req.raw.match(/^([^\s,]+),?\s*(.*)/)
     if not matches?
-      @syntax(req)
+      @querySyntax(req)
       return
     req.modelName = matches[1]
     req.prompt = matches[2]
 
     # Intrinsic subcommands (you may not name a model one of these)
     if req.modelName == "help"
-      @syntax(req)
+      @querySyntax(req)
       return
-    if req.modelName == "config"
-      @queryConfig(req)
+    if req.modelName == "models"
+      @queryModels(req)
+      return
+    if req.modelName == "params"
+      @queryParams(req)
       return
     if (req.modelName == "queue") or (req.modelName == "q")
       @queryQueue(req)
       return
-    if req.modelName == "urls"
-      @queryURLs(req)
+    if req.modelName == "sources"
+      @querySources(req)
       return
     if (req.modelName == "refine") or (req.modelName == "same")
       if not refineParams?
@@ -523,7 +543,7 @@ class SDWorker
     if refineParams?
       refineParams.count = 1
       if not req.images? and refineParams.images?
-        req.images = JSON.parse(Buffer.from(refineParams.images, 'base64').toString())
+        req.images = JSON.parse(Buffer.from(refineParams.images.replace(/\s+/, ""), 'base64').toString())
 
     autoGrid = false
     if req.modelName == "grid"
@@ -536,7 +556,7 @@ class SDWorker
       console.log "Chose random model: #{req.modelName}"
 
     if not @models[req.modelName]?
-      @syntax(req, "No such model: #{req.modelName}")
+      @querySyntax(req, "No such model: #{req.modelName}")
       return
 
     # ----------------------------------------------------------
