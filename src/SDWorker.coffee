@@ -420,7 +420,7 @@ class SDWorker
     output += "\n"
     output += "**random** - Choose a model at random!\n"
     output += "**grid** - Shorthand for `random [grid]`\n"
-    output += "**refine** - If replying to a result, use that result's model choice`\n"
+    output += "**refine** - If replying to a result, use that result's model\n"
 
     req.reply output
     return
