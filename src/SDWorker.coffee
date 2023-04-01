@@ -2,6 +2,7 @@ fs = require 'fs'
 http = require 'http'
 https = require 'https'
 path = require 'path'
+CSON = require 'cson'
 PNG = require('pngjs').PNG
 JPEG = require 'jpeg-js'
 
@@ -120,7 +121,7 @@ class SDWorker
       sampler_name: "sampler"
       width: "w"
 
-  parseParams: (prompt) ->
+  parseParams: (prompt, refineParams = null) ->
     rawParams = ""
     if matches = prompt.match(/^\[([^\]]+)\](.*)/)
       rawParams = matches[1]
@@ -139,6 +140,19 @@ class SDWorker
     for name,pc of @paramConfig
       params[name] = pc.default
     # console.log params
+
+    if refineParams?
+      for k,v of refineParams
+        switch k
+          when 'images', 'model'
+            continue
+          when 'prompt'
+            if params.prompt.length == 0
+              params.prompt = v
+          else
+            if @paramAliases[k]?
+              k = @paramAliases[k]
+            params[k] = v
 
     rawParams = rawParams.replace(/,\s+/g, ',')
     console.log "rawParams: #{rawParams}"
@@ -469,6 +483,17 @@ class SDWorker
     return false
 
   request: (req) ->
+    refineParams = null
+    if req.ref? and req.ref.content?
+      if matches = req.ref.content.match(/->```([^`]+)```/)
+        rawCSON = "{#{matches[1]}}"
+        console.log "rawCSON: " + rawCSON
+        try
+          refineParams = CSON.parse(rawCSON)
+        catch e
+          console.log "e: ", e
+          refineParams = null
+
     matches = req.raw.match(/^([^\s,]+),?\s*(.*)/)
     if not matches?
       @syntax(req)
@@ -483,12 +508,22 @@ class SDWorker
     if req.modelName == "config"
       @queryConfig(req)
       return
-    if req.modelName == "queue"
+    if (req.modelName == "queue") or (req.modelName == "q")
       @queryQueue(req)
       return
     if req.modelName == "urls"
       @queryURLs(req)
       return
+    if (req.modelName == "refine") or (req.modelName == "same")
+      if not refineParams?
+        req.reply("ERROR: Refine requests must be replies to successful outputs from me!")
+        return
+      req.modelName = refineParams.model
+
+    if refineParams?
+      refineParams.count = 1
+      if not req.images? and refineParams.images?
+        req.images = JSON.parse(Buffer.from(refineParams.images, 'base64').toString())
 
     autoGrid = false
     if req.modelName == "grid"
@@ -504,14 +539,12 @@ class SDWorker
       @syntax(req, "No such model: #{req.modelName}")
       return
 
-    modelInfo = @models[req.modelName]
-    if modelInfo.suffix?
-      req.prompt += ", #{modelInfo.suffix}"
-
     # ----------------------------------------------------------
     # Prepare request / passes
 
-    params = @parseParams(req.prompt)
+    params = @parseParams(req.prompt, refineParams)
+    modelInfo = @models[req.modelName]
+
     passes = []
     xyz = params.xyz
     if xyz?
@@ -574,6 +607,8 @@ class SDWorker
       queuePos = "##{queuePos}"
 
     s = "_Queued:_ **#{queuePos}** in line"
+    if refineParams?
+      s += ", ***refinement***"
     if not req.images? or (req.images.length == 0)
       s += ", **txt2img**"
     else if req.images.length > 1
@@ -673,6 +708,10 @@ class SDWorker
       @queuePassCount = req.passes.length
       for k,v of pass
         req.params[k] = v
+
+      origPrompt = req.params.prompt
+      if modelInfo.suffix?
+        req.params.prompt += ", #{modelInfo.suffix}"
       if srcImage?
         console.log "img2img[#{srcImage.buffer.length}]: #{req.prompt}"
         result = await @img2img(srcImage, srcMask, req.params)
@@ -683,6 +722,7 @@ class SDWorker
         outputSeed = JSON.parse(result.info).seed
       catch
         outputSeed = -1
+      req.params.prompt = origPrompt
       req.params.seed = outputSeed
       if result? and result.images? and result.images.length > 0
         for img in result.images
@@ -703,9 +743,13 @@ class SDWorker
     message = {}
     if outputImages.length > 0
       console.log "Received #{outputImages.length} images..."
-      message.text = "Complete [#{modelInfo.model}][#{(timeTaken/1000).toFixed(2)}s]:\n"
+      message.text = "Complete [#{modelInfo.model}][#{(timeTaken/1000).toFixed(2)}s]: ->"
+      req.params.model = req.modelName
+      if req.images?
+        req.params.images = new Buffer(JSON.stringify(req.images)).toString('base64')
+        req.params.images = req.params.images.replace(/(.{8})/g, "$1 ").trim()
       if req.passes.length > 1
-        message.text += "```#{@dumpPretty(req.params)}\n\n"
+        message.text += "```#{@dumpPretty(req.params)}``````"
         for pass, passIndex in req.passes
           message.text += "##{pad(passIndex+1, 2)}: #{@dumpPretty(pass)}\n"
         message.text += "```\n"

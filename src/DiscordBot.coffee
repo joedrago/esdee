@@ -32,10 +32,18 @@ class DiscordBot
     if msg.content.indexOf(@prefix) != 0
       return
 
+    ref = null
+    if msg.type == Discord.MessageType.Reply
+      ref = await msg.fetchReference()
+      if ref.author.id != @discordClient.user.id
+        # Only send this if the person is trying to reply to us
+        ref = null
+
     raw = msg.content.substring(@prefix.length).trim()
     req = {
       discordMsg: msg
       raw: raw
+      ref: ref
     }
 
     if msg.attachments?
