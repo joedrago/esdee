@@ -594,10 +594,6 @@ class SDWorker
       autoGrid = true
       delete params["grid"]
 
-      if not hasImages
-        req.reply("It doesn't make sense to `[grid]` without an attached image.")
-        return
-
     if not hasImages and explicit.denoising_strength?
       aliasText = ""
       if explicit.denoising_strength != "denoising_strength"
@@ -607,11 +603,21 @@ class SDWorker
 
     if (xyz.length == 0) and autoGrid
       params.batch_size = 1 # Force to 1
-      xyz.push {
-        name: "denoising_strength"
-        next: 0
-        vals: [0.3,0.4,0.5,0.6,0.7]
-      }
+      if hasImages
+        xyz.push {
+          name: "denoising_strength"
+          next: 0
+          vals: [0.3,0.4,0.5,0.6,0.7]
+        }
+      else
+        seeds = []
+        for n in [0...5]
+          seeds.push Math.floor(Math.random() * 1000000000)
+        xyz.push {
+          name: "seed"
+          next: 0
+          vals: seeds
+        }
       xyz.push {
         name: "cfg_scale"
         next: 0
