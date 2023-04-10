@@ -407,7 +407,7 @@ class SDWorker
     output += "\nTune params by putting name/value pairs inside \`[]\` _after_ the model name.\n"
     output += "* Use comma separated values for a param's value to try multiple values, such as `[dn 0.3,0.4,0.5,0.6,0.7]`\n"
     output += "* Use a range for a param's value to try multiple values, such as `[dn 0.3-0.7x5]` (same as above)\n"
-    output += "* Use `[grid]` as shorthand for `[dn 0.3-0.7x5 cfg 3-27x5]`\n"
+    output += "* Use `[grid]` as shorthand for `[dn 0.3-0.7x5 cfg 5-16x5]`\n"
     output += "* **Reply to a result**(!) to use its settings as a starting point (use `refine` for the model name to keep that model)\n"
     output += "\n"
     output += "**#{@prefix} params** - Get the full list of tunable parameters\n"
@@ -621,7 +621,7 @@ class SDWorker
       xyz.push {
         name: "cfg_scale"
         next: 0
-        vals: [3,9,15,21,27]
+        vals: [5,8,11,13,16]
       }
 
     totalImages = 0
