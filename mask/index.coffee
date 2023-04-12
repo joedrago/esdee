@@ -27,6 +27,19 @@ window.undoPop = ->
       updateDraw()
     prevImage.src = prevState
 
+window.invert = ->
+  backup = canM.toDataURL('image/png')
+  backupImage = new Image()
+  backupImage.onload = ->
+    console.log "backupImage.onload() #{backupImage.width}x#{backupImage.height}"
+    ctxM.fillStyle = "#000"
+    ctxM.fillRect(0, 0, canM.width, canM.height)
+    ctxM.filter = 'invert(1)'
+    ctxM.drawImage(backupImage, 0, 0)
+    ctxM.filter = 'none'
+    updateDraw()
+  backupImage.src = backup
+
 window.updateDraw = ->
   ctxD.drawImage(canS, 0, 0)
   ctxD.globalCompositeOperation = 'screen'
@@ -163,6 +176,7 @@ window.buildUI = (srcImage) ->
 
   # Create/display buttons
   html = """
+    <div class="button" id="invert">Inv</div>
     <div class="button" id="undo">Undo</div>
     <input type="range" id="radius" name="" min="1" max="50" value="#{DEFAULT_RADIUS}">
     <div class="button" id="copys">Copy Image</div>
@@ -171,6 +185,8 @@ window.buildUI = (srcImage) ->
   document.getElementById('buttons').innerHTML = html
   document.getElementById('undo').addEventListener 'click', (ev) ->
     undoPop()
+  document.getElementById('invert').addEventListener 'click', (ev) ->
+    invert()
   document.getElementById('copys').addEventListener 'click', (ev) ->
     canS.toBlob (blob) ->
       copyImageToClipboard(blob)
