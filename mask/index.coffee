@@ -217,8 +217,7 @@ init = ->
 
   document.body.addEventListener('drop', handleDrop, false)
 
-  input = document.getElementById('text')
-  input.addEventListener 'paste', (event) ->
+  document.addEventListener 'paste', (event) ->
     items = (event.clipboardData || event.originalEvent.clipboardData).items
     for item in items
       if item.kind == 'file'
