@@ -1,0 +1,111 @@
+<html>
+<head>
+<style>
+
+html, body {
+    font-family: monospace;
+    background-color: #000;
+}
+
+#overall {
+    width: 600px;
+    margin: auto;
+    padding-bottom: 20px;
+    background-color: #333;
+}
+
+#top {
+    width: 5
+    00px;
+    margin: auto;
+    background-color: #333;
+}
+
+#fileElem {
+    display: none;
+}
+
+#text {
+    width: 1px;
+    height: 1px;
+    border: none;
+    color: #333;
+    background-color: #333;
+}
+
+#thelabel {
+    margin: 0px;
+    padding: 0px;
+}
+
+.button {
+    display: inline-block;
+    width: 100px;
+    height: 28px;
+    line-height: 28px;
+    border: 1px dashed #fff;
+    background-color: #777;
+    color: #fff;
+    text-align: center;
+    overflow: hidden;
+    user-select: none;
+}
+
+#filename {
+    width: 150px;
+}
+
+#radius {
+    accent-color: #070;
+    width: 100px;
+}
+
+#buttons {
+    cursor: pointer;
+    display: inline-block;
+    width: 440px;
+    height: 30px;
+/*    background-color: #0f0;*/
+    margin: 0px;
+}
+
+#canvasS {
+    display: none;
+}
+#canvasM {
+    display: none;
+}
+#canvasD {
+    border: 2px solid #ff0;
+}
+
+#work {
+    width: 512px;
+    margin: auto;
+}
+
+</style>
+</head>
+<body>
+
+<div id="overall">
+
+<div id="top">
+<form action="#" id="dropform">
+    <label for="fileElem" id="thelabel">
+        <input type="file" id="fileElem" onchange="handleFiles(this.files, 'file')">
+        <div class="button" id="filename">Gimme an image!</div>
+    </label>
+    <div id="buttons"></div>
+    <input id="text" type="text">
+</form>
+</div>
+
+<div id="work">&nbsp;</div>
+
+</div>
+
+<script type="text/coffeescript" src="index.coffee"></script>
+<script src="coffeescript.js"></script>
+</body>
+</html>
