@@ -3,6 +3,7 @@ canS = canM = canD = ctxS = ctxM = ctxD = null
 DEFAULT_RADIUS = 20
 maskRadius = DEFAULT_RADIUS
 maskDrawing = false
+maskTouchID = null
 maskUndo = []
 maskLastX = null
 maskLastY = null
@@ -46,8 +47,8 @@ window.drawCursor = (x, y) ->
   ctxD.fillStyle = '#070'
   ctxD.fill()
 
-window.onMouseDown = (x, y) ->
-  # console.log "onMouseDown #{x}, #{y}"
+window.beginDrawing = (x, y) ->
+  # console.log "beginDrawing #{x}, #{y}"
   undoPush()
   drawMaskCircle(x, y)
   updateDraw()
@@ -59,9 +60,10 @@ window.onMouseMove = (x, y) ->
   if maskDrawing
     drawMaskCircle(x, y)
   updateDraw()
-window.onMouseUp = ->
-  # console.log "onMouseUp"
+window.endDrawing = ->
+  # console.log "endDrawing"
   maskDrawing = false
+  updateDraw()
 
 window.copyImageToClipboard = (blob) ->
   try
@@ -115,6 +117,7 @@ window.buildUI = (srcImage) ->
   maskDrawing = false
   maskLastX = null
   maskLastY = null
+  maskTouchID = null
 
   # update draw canvas
   updateDraw()
@@ -122,16 +125,41 @@ window.buildUI = (srcImage) ->
   # hookup listeners
   canvasD.addEventListener 'mousedown', (ev) ->
     r = canD.getBoundingClientRect()
-    onMouseDown(ev.clientX - r.left, ev.clientY - r.top)
+    beginDrawing(ev.pageX - r.left, ev.pageY - r.top)
   canvasD.addEventListener 'mousemove', (ev) ->
     r = canD.getBoundingClientRect()
-    onMouseMove(ev.clientX - r.left, ev.clientY - r.top)
+    onMouseMove(ev.pageX - r.left, ev.pageY - r.top)
   canvasD.addEventListener 'mouseup', (ev) ->
-    onMouseUp()
+    endDrawing()
   canvasD.addEventListener 'mouseleave', (ev) ->
     maskLastX = null
     maskLastY = null
-    updateDraw()
+    endDrawing()
+
+  canvasD.addEventListener 'touchstart', (ev) ->
+    if ev.touches.length > 1
+      return
+    # ev.preventDefault()
+    if not maskDrawing and (ev.touches.length == 1)
+      touch = ev.touches[0]
+      maskTouchID = touch.identifier
+      r = canD.getBoundingClientRect()
+      beginDrawing(touch.pageX - r.left, touch.pageY - r.top)
+  canvasD.addEventListener 'touchmove', (ev) ->
+    if ev.touches.length > 1
+      return
+    ev.preventDefault()
+    for touch in ev.changedTouches
+      if touch.identifier == maskTouchID
+        r = canD.getBoundingClientRect()
+        onMouseMove(touch.pageX - r.left, touch.pageY - r.top)
+  canvasD.addEventListener 'touchend', (ev) ->
+    # ev.preventDefault()
+    if ev.touches.length == 0
+      maskTouchID = null
+      maskLastX = null
+      maskLastY = null
+      endDrawing()
 
   # Create/display buttons
   html = """
