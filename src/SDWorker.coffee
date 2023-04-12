@@ -310,6 +310,7 @@ class SDWorker
         if (srcImage.width == srcMask.width) and (srcImage.height == srcMask.height)
           maskStatus = "inpainting_fill"
           params.inpainting_fill = 1
+          params.inpaint_full_res = true
           params.mask = "data:#{srcMask.type};base64," + srcMask.buffer.toString('base64')
         else
           maskStatus = "inpainting_ignored_bad_mask_dims"
@@ -818,6 +819,7 @@ class SDWorker
       else
         message.images = outputImages
     else
+      console.log result
       message.text = "**FAILED**: [#{modelInfo.model}] #{req.prompt}"
 
     if message.text.length >= 2000
