@@ -4,7 +4,7 @@ DEFAULT_RADIUS = 20
 maskRadius = DEFAULT_RADIUS
 maskDrawing = false
 maskTouchID = null
-maskScale = 4
+maskScale = 1
 maskUndo = []
 maskLastX = null
 maskLastY = null
@@ -23,7 +23,7 @@ maskScaleOverride = qs('scale')
 if not maskScaleOverride?
   maskScaleOverride = qs('s')
 if maskScaleOverride?
-  maskScale = Math.max(1, Math.min(parseInt(maskScaleOverride), 16))
+  maskScale = Math.max(1, Math.min(parseInt(maskScaleOverride), 4))
 
 preventDefaults = (e) ->
   e.preventDefault()
