@@ -4,9 +4,26 @@ DEFAULT_RADIUS = 20
 maskRadius = DEFAULT_RADIUS
 maskDrawing = false
 maskTouchID = null
+maskScale = 2
 maskUndo = []
 maskLastX = null
 maskLastY = null
+workingScale = 1
+
+qs = (name) ->
+  url = window.location.href
+  name = name.replace(/[\[\]]/g, '\\$&')
+  regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)')
+  results = regex.exec(url);
+  if not results or not results[2]
+    return null
+  return decodeURIComponent(results[2].replace(/\+/g, ' '))
+
+maskScaleOverride = qs('scale')
+if not maskScaleOverride?
+  maskScaleOverride = qs('s')
+if maskScaleOverride?
+  maskScale = Math.max(1, Math.min(parseInt(maskScaleOverride), 8))
 
 preventDefaults = (e) ->
   e.preventDefault()
@@ -63,15 +80,15 @@ window.drawCursor = (x, y) ->
 window.beginDrawing = (x, y) ->
   # console.log "beginDrawing #{x}, #{y}"
   undoPush()
-  drawMaskCircle(x, y)
+  drawMaskCircle(x * workingScale, y * workingScale)
   updateDraw()
   maskDrawing = true
 window.onMouseMove = (x, y) ->
   # console.log "onMouseMove #{x}, #{y}"
-  maskLastX = x
-  maskLastY = y
+  maskLastX = x * workingScale
+  maskLastY = y * workingScale
   if maskDrawing
-    drawMaskCircle(x, y)
+    drawMaskCircle(maskLastX, maskLastY)
   updateDraw()
 window.endDrawing = ->
   # console.log "endDrawing"
@@ -94,21 +111,37 @@ window.buildUI = (srcImage) ->
   srcAspect = srcW / srcH
 
   if srcAspect < 1
-    dstH = 512
+    dstH = 512 * maskScale
     dstW = dstH * srcAspect
   else
-    dstW = 512
+    dstW = 512 * maskScale
     dstH = dstW / srcAspect
 
   dstW = Math.floor(dstW / 4) * 4
   dstH = Math.floor(dstH / 4) * 4
 
-  console.log "dstW #{dstW}, dstH #{dstH}"
+  windowAspect = window.innerWidth / window.innerHeight
+  console.log "windowAspect: #{windowAspect}"
+  if windowAspect < 1
+    workingW = window.innerWidth - 20
+    workingH = workingW / srcAspect
+  else
+    workingH = window.innerHeight - 150
+    if workingH < 200
+      workingH = 200
+    workingW = workingH * srcAspect
+  workingW = Math.floor(workingW)
+  workingH = Math.floor(workingH)
+  workingScale = dstW / workingW
+  document.getElementById('overall').style.width = workingW + 4
+
+  console.log "dstW #{dstW}, dstH #{dstH}, workingW #{workingW}, workingH #{workingH}"
 
   html = """
     <canvas id="canvasS" width="#{dstW}" height="#{dstH}"></canvas>
     <canvas id="canvasM" width="#{dstW}" height="#{dstH}"></canvas>
     <canvas id="canvasD" width="#{dstW}" height="#{dstH}"></canvas>
+    <div id="dims"></div>
   """
   document.getElementById('work').innerHTML = html
 
@@ -118,6 +151,11 @@ window.buildUI = (srcImage) ->
   ctxS = canS.getContext('2d')
   ctxM = canM.getContext('2d')
   ctxD = canD.getContext('2d')
+  for c in [canS, canM, canD]
+    c.style.width = "#{workingW}px"
+    c.style.height = "#{workingH}px"
+
+  document.getElementById('dims').innerHTML = "#{dstW}x#{dstH}"
 
   # Scale source image to source canvas
   ctxS.drawImage(srcImage, 0, 0, dstW, dstH)
