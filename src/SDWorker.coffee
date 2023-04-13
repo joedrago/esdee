@@ -414,6 +414,7 @@ class SDWorker
     output += "**#{@prefix} params** - Get the full list of tunable parameters\n"
     output += "**#{@prefix} models** - Get the full list of models\n"
     output += "**#{@prefix} sources** - Get the original source URLs of all models\n"
+    output += "**#{@prefix} inpainting** - Learn how to use inpainting\n"
     output += "\n"
 
     req.reply output
@@ -490,6 +491,21 @@ class SDWorker
     rep = await req.reply(o)
     rep.suppressEmbeds(true)
 
+  queryInpainting: (req) ->
+    o = """**How to do inpainting!**\n
+      * _Visit_: https://joedrago.github.io/mask/
+      * Paste/dragdrop/choose an image
+      * Paint the portion of the image you want to be affected by AI in **white**
+      * Choose `Copy Image` and paste into Discord (_don't send yet!_)
+      * Choose `Copy Mask` and paste into Discord (_don't send yet!_)
+      * Type in any typical `#{@prefix}` command along with the two attached images, and **only describe the part you've painted in white**.
+      * Send the message!
+
+      Using features like `[grid]` can really help find the right look, such as `#{@prefix} MODELNAME [grid] description of white part`
+    """
+    rep = await req.reply(o)
+    # rep.suppressEmbeds(true)
+
   xyzPlot: (xyz, params) ->
     if xyz.length < 1
       return true
@@ -543,6 +559,9 @@ class SDWorker
       return
     if req.modelName == "sources"
       @querySources(req)
+      return
+    if (req.modelName == "inpainting") or (req.modelName == "inpaint") or (req.modelName == "paint") or (req.modelName == "p") or (req.modelName == "i")
+      @queryInpainting(req)
       return
     if (req.modelName == "refine") or (req.modelName == "same")
       if not refineParams?
