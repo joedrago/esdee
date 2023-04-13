@@ -164,7 +164,7 @@ window.buildUI = (srcImage) ->
   ctxM.fillStyle = "#000"
   ctxM.fillRect(0, 0, canM.width, canM.height)
   maskUndo = []
-  maskRadius = DEFAULT_RADIUS
+  maskRadius = DEFAULT_RADIUS * maskScale
   maskDrawing = false
   maskLastX = null
   maskLastY = null
@@ -216,7 +216,7 @@ window.buildUI = (srcImage) ->
   html = """
     <div class="button" id="invert">Inv</div>
     <div class="button" id="undo">Undo</div>
-    <input type="range" id="radius" name="" min="1" max="50" value="#{DEFAULT_RADIUS}">
+    <input type="range" id="radius" name="" min="1" max="#{50 * maskScale}" value="#{DEFAULT_RADIUS * maskScale}">
     <div class="button" id="copys">Copy Image</div>
     <div class="button" id="copym">Copy Mask</div>
   """
