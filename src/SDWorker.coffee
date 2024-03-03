@@ -544,6 +544,10 @@ class SDWorker
     req.modelName = matches[1]
     req.prompt = matches[2]
 
+    if req.prompt.match(/grid\s+/)
+      req.prompt = req.prompt.replace(/grid\s+/, "[grid] ")
+      req.reply "Assuming: `#{@prefix} #{req.modelName} #{req.prompt}`"
+
     # Intrinsic subcommands (you may not name a model one of these)
     if req.modelName == "help"
       @querySyntax(req)
